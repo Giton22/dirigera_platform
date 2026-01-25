@@ -23,7 +23,7 @@ from .ikea_gateway import ikea_gateway
 
 from homeassistant import config_entries, core
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
-from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN
+from homeassistant.const import CONF_IP_ADDRESS, CONF_TOKEN, UnitOfTime, CONCENTRATION_MICROGRAMS_PER_CUBIC_METER
 from homeassistant.core import HomeAssistantError
 from homeassistant.helpers.entity import EntityCategory
 
@@ -114,7 +114,7 @@ async def add_air_purifier_sensors(async_add_entities, air_purifiers):
                 prefix="Filter Lifetime",
                 device_class=SensorDeviceClass.DURATION,
                 native_value_prop="filter_lifetime",
-                native_uom="min",
+                native_unit_of_measurement=UnitOfTime.MINUTES,
                 icon_name="mdi:clock-time-eleven-outline",
             )
         )
@@ -125,7 +125,7 @@ async def add_air_purifier_sensors(async_add_entities, air_purifiers):
                 prefix="Filter Elapsed Time",
                 device_class=SensorDeviceClass.DURATION,
                 native_value_prop="filter_elapsed_time",
-                native_uom="min",
+                native_unit_of_measurement=UnitOfTime.MINUTES,
                 icon_name="mdi:timelapse",
             )
         )
@@ -136,7 +136,7 @@ async def add_air_purifier_sensors(async_add_entities, air_purifiers):
                 prefix="Current pm25",
                 device_class=SensorDeviceClass.PM25,
                 native_value_prop="current_p_m25",
-                native_uom="µg/m³",
+                native_unit_of_measurement=CONCENTRATION_MICROGRAMS_PER_CUBIC_METER,
                 icon_name="mdi:molecule",
             )
         )
@@ -147,7 +147,7 @@ async def add_air_purifier_sensors(async_add_entities, air_purifiers):
                 prefix="Motor Runtime",
                 device_class=SensorDeviceClass.DURATION,
                 native_value_prop="motor_runtime",
-                native_uom="min",
+                native_unit_of_measurement=UnitOfTime.MINUTES,
                 icon_name="mdi:run-fast",
             )
         )

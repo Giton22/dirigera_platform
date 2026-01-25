@@ -664,7 +664,7 @@ class ikea_starkvind_air_purifier_sensor(ikea_base_device_sensor, SensorEntity):
                     id_suffix=prefix,
                     name=prefix,
                     device_class=device_class,
-                    native_unit_of_measurement=native_uom,
+                    native_unit_of_measurement=native_unit_of_measurement,
                     icon=icon_name)
 
         self._native_value_prop = native_value_prop
