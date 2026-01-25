@@ -476,7 +476,10 @@ class ikea_alpstuga_co2(ikea_base_device_sensor, SensorEntity):
 # all same except _1 and _2 suffix. The serial number on the
 # controllers is same.
 
-CONTROLLER_BUTTON_MAP = { "SOMRIG shortcut button" : 2 }
+CONTROLLER_BUTTON_MAP = {
+    "SOMRIG shortcut button" : 2,
+    "Remote Control N2" : 4,  # STYRBAR 4-button remote
+}
 
 class ikea_controller_device(ikea_base_device, SensorEntity):
     def __init__(self,hass:core.HomeAssistant, hub:Hub, json_data:Controller):
