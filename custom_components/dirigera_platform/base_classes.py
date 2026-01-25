@@ -789,6 +789,7 @@ class current_active_power_sensor(ikea_base_device_sensor, SensorEntity):
                             id_suffix="CAP01",
                             name="Current Active Power",
                             native_unit_of_measurement=UnitOfPower.WATT,
+                            state_class=SensorStateClass.MEASUREMENT,
                             icon="mdi:lightning-bolt-outline",
                             device_class=SensorDeviceClass.POWER)
 
