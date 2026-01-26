@@ -220,27 +220,19 @@ class ikea_bulb(LightEntity):
 
     @property
     def max_color_temp_kelvin(self):
-        # Dirigera stores color temperature in mired (micro reciprocal degrees)
-        # Home Assistant expects Kelvin. Lower mired = higher Kelvin (cooler/bluer)
-        mired = self._json_data.attributes.color_temperature_min
-        if mired is None or mired == 0:
-            return None
-        return int(1000000 / mired)
+        # Dirigera API returns Kelvin values directly
+        # colorTemperatureMin = coldest = highest Kelvin (e.g. 4000K)
+        return self._json_data.attributes.color_temperature_min
 
     @property
     def min_color_temp_kelvin(self):
-        # Higher mired = lower Kelvin (warmer/redder)
-        mired = self._json_data.attributes.color_temperature_max
-        if mired is None or mired == 0:
-            return None
-        return int(1000000 / mired)
+        # colorTemperatureMax = warmest = lowest Kelvin (e.g. 2202K)
+        return self._json_data.attributes.color_temperature_max
 
     @property
     def color_temp_kelvin(self):
-        mired = self._json_data.attributes.color_temperature
-        if mired is None or mired == 0:
-            return None
-        return int(1000000 / mired)
+        # Current color temperature in Kelvin
+        return self._json_data.attributes.color_temperature
 
     @property
     def color_temperature(self):
