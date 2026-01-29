@@ -279,6 +279,68 @@ class hub_event_listener(threading.Thread):
             self._hass.bus.fire(event_type="dirigera_platform_event",event_data=event_data)
             logger.debug(f"Event fired.. {event_data}")
 
+        # Apply scene action attributes to light entities
+        # Some bulbs only send colorMode in deviceStateChanged after a scene,
+        # without the actual color values. The sceneUpdated event contains the
+        # full attributes in its actions, so we apply them here.
+        self._apply_scene_actions(msg)
+
+    def _apply_scene_actions(self, msg):
+        """Apply attributes from scene actions to the corresponding entities."""
+        if "data" not in msg or "actions" not in msg["data"]:
+            return
+
+        for action in msg["data"]["actions"]:
+            if action.get("type") != "device":
+                continue
+
+            device_id = action.get("deviceId")
+            attributes = action.get("attributes")
+
+            if not device_id or not attributes:
+                continue
+
+            if device_id not in hub_event_listener.device_registry:
+                logger.debug(f"Scene action device {device_id} not in registry, skipping")
+                continue
+
+            registry_value = hub_event_listener.get_registry_entry(device_id)
+            if registry_value.__class__.__name__ != "registry_entry":
+                continue
+
+            entity = registry_value.entity
+
+            # Only process light-relevant attributes from scene actions
+            light_attrs = ["isOn", "lightLevel", "colorTemperature", "colorHue", "colorSaturation"]
+            updated = False
+
+            for key in attributes:
+                if key not in light_attrs:
+                    continue
+                try:
+                    key_attr = to_snake_case(key)
+                    logger.debug(f"Scene action: setting {key_attr} to {attributes[key]} on {device_id}")
+                    setattr(entity._json_data.attributes, key_attr, attributes[key])
+                    updated = True
+                except Exception as ex:
+                    logger.warning(f"Scene action: failed to set {key} on {device_id}: {ex}")
+
+            # Update color_mode based on scene attributes
+            if updated and hasattr(entity, '_color_mode'):
+                if "colorHue" in attributes or "colorSaturation" in attributes:
+                    entity._color_mode = ColorMode.HS
+                    logger.debug(f"Scene action: set color_mode to HS for {device_id}")
+                elif "colorTemperature" in attributes:
+                    entity._color_mode = ColorMode.COLOR_TEMP
+                    logger.debug(f"Scene action: set color_mode to COLOR_TEMP for {device_id}")
+
+            if updated:
+                try:
+                    entity.schedule_update_ha_state()
+                    logger.debug(f"Scene action: scheduled HA state update for {device_id}")
+                except Exception as ex:
+                    logger.warning(f"Scene action: failed to schedule update for {device_id}: {ex}")
+
     def parse_remote_press_event(self, msg):
         """
         Parse remotePressEvent messages from lightController remotes like STYRBAR and RODRET.
