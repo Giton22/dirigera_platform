@@ -226,7 +226,8 @@ class hub_event_listener(threading.Thread):
             device_id_for_registry = device_id
              
             button_idx = 0
-            pattern = '(([0-9]|[a-z]|-)*)_([0-9])+'
+            # FIX: Updated regex to include A-Z for uppercase UUIDs
+            pattern = '(([0-9]|[a-zA-Z]|-)*)_([0-9])+'
             match = re.search(pattern, device_id)
             if match is not None:
                 device_id_for_registry = f"{match.groups()[0]}_1"
@@ -374,7 +375,8 @@ class hub_event_listener(threading.Thread):
         # Handle multi-button controllers (device_id like xxx_2 means button 2)
         device_id_for_registry = device_id
         button_idx = 0
-        pattern = '(([0-9]|[a-z]|-)*)_([0-9])+'
+        # FIX: Updated regex to include A-Z for uppercase UUIDs
+        pattern = '(([0-9]|[a-zA-Z]|-)*)_([0-9])+'
         match = re.search(pattern, device_id)
         if match is not None:
             device_id_for_registry = f"{match.groups()[0]}_1"
