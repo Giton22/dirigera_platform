@@ -5,7 +5,6 @@ import json
 import re 
 import websocket
 import ssl
-import re
 from typing import Any 
 import datetime
 from dateutil import parser
@@ -226,12 +225,12 @@ class hub_event_listener(threading.Thread):
             device_id_for_registry = device_id
              
             button_idx = 0
-            # FIX: Updated regex to include A-Z for uppercase UUIDs
-            pattern = '(([0-9]|[a-zA-Z]|-)*)_([0-9])+'
+            # FIX: Universal regex to match ANY ID format ending in _N
+            pattern = r'^(.*)_([0-9]+)$'
             match = re.search(pattern, device_id)
             if match is not None:
-                device_id_for_registry = f"{match.groups()[0]}_1"
-                button_idx = int(match.groups()[2])
+                device_id_for_registry = f"{match.group(1)}_1"
+                button_idx = int(match.group(2))
                 logger.debug(f"Multi button controller, device_id effective : {device_id_for_registry} with buttons : {button_idx}")
                 
             if button_idx != 0:
@@ -281,9 +280,6 @@ class hub_event_listener(threading.Thread):
             logger.debug(f"Event fired.. {event_data}")
 
         # Apply scene action attributes to light entities
-        # Some bulbs only send colorMode in deviceStateChanged after a scene,
-        # without the actual color values. The sceneUpdated event contains the
-        # full attributes in its actions, so we apply them here.
         self._apply_scene_actions(msg)
 
     def _apply_scene_actions(self, msg):
@@ -345,7 +341,6 @@ class hub_event_listener(threading.Thread):
     def parse_remote_press_event(self, msg):
         """
         Parse remotePressEvent messages from lightController remotes like STYRBAR and RODRET.
-        These remotes send direct press events without needing scene configuration.
         """
         global controller_trigger_last_time_map
 
@@ -375,12 +370,12 @@ class hub_event_listener(threading.Thread):
         # Handle multi-button controllers (device_id like xxx_2 means button 2)
         device_id_for_registry = device_id
         button_idx = 0
-        # FIX: Updated regex to include A-Z for uppercase UUIDs
-        pattern = '(([0-9]|[a-zA-Z]|-)*)_([0-9])+'
+        # FIX: Universal regex to match ANY ID format ending in _N
+        pattern = r'^(.*)_([0-9]+)$'
         match = re.search(pattern, device_id)
         if match is not None:
-            device_id_for_registry = f"{match.groups()[0]}_1"
-            button_idx = int(match.groups()[2])
+            device_id_for_registry = f"{match.group(1)}_1"
+            button_idx = int(match.group(2))
             logger.debug(f"remotePressEvent: Multi button controller, device_id effective: {device_id_for_registry} with button: {button_idx}")
 
         if button_idx != 0:
@@ -444,23 +439,17 @@ class hub_event_listener(threading.Thread):
                     device_type = msg['data'].get('deviceType', msg['data'].get('type'))
                     if device_type and self._discovery_coordinator is not None:
                         logger.info(f"Device added event received: {device_id} (type: {device_type})")
-                        # Schedule discovery on the main event loop
                         self._hass.loop.call_soon_threadsafe(
                             lambda did=device_id, dt=device_type: self._hass.async_create_task(
                                 self._discovery_coordinator.discover_device(did, dt)
                             )
                         )
-                    else:
-                        logger.debug(f"deviceAdded event without discovery coordinator or type: {msg}")
                 return
 
-            # Log deviceRemoved events for now (entities will become unavailable)
             if msg['type'] == "deviceRemoved":
                 if "data" in msg and "id" in msg['data']:
                     device_id = msg['data']['id']
                     logger.info(f"Device removed event received: {device_id}")
-                    # Note: The entity will remain in HA but become unavailable
-                    # Full removal requires manual deletion in HA UI or a restart
                 return
 
             if msg['type'] != "deviceStateChanged":
@@ -485,15 +474,11 @@ class hub_event_listener(threading.Thread):
 
             logger.debug(f"device type of message {device_type}")
             if device_type not in process_events_from:
-                # To avoid issues been reported. If we dont have it in our list
-                # then best to not process this event
                 return
 
             if id not in hub_event_listener.device_registry:
-                # Unknown device - try to discover it
                 if self._discovery_coordinator is not None:
                     logger.info(f"Unknown device detected: {id} (type: {device_type}), triggering discovery")
-                    # Schedule discovery on the main event loop
                     self._hass.loop.call_soon_threadsafe(
                         lambda: self._hass.async_create_task(
                             self._discovery_coordinator.discover_device(id, device_type)
@@ -516,7 +501,6 @@ class hub_event_listener(threading.Thread):
                     logger.error(f"Failed to setattr is_reachable on device: {id} for msg: {msg}")
                     logger.error(ex)
 
-            # Process room updates (room info comes as separate field, not in attributes)
             room_changed = False
             if "room" in info:
                 try:
@@ -532,9 +516,6 @@ class hub_event_listener(threading.Thread):
                             logger.debug(f"Setting {id} room to {new_room.name}")
                             entity._json_data.room = new_room
                             room_changed = True
-                        # Always ensure HA device registry area matches (even if _json_data room didn't change)
-                        # This handles the case where HA restarts and the room is already set in _json_data
-                        # but not yet in the HA device registry
                         try:
                             self._hass.loop.call_soon_threadsafe(
                                 lambda room=new_room.name, device_id=id: self._hass.async_create_task(
@@ -544,7 +525,6 @@ class hub_event_listener(threading.Thread):
                         except Exception as ex:
                             logger.error(f"Failed to schedule device area update for {id}: {ex}")
                     elif entity._json_data.room is not None:
-                        # Room was removed
                         logger.debug(f"Removing room from {id}")
                         entity._json_data.room = None
                         room_changed = True
@@ -571,54 +551,38 @@ class hub_event_listener(threading.Thread):
 
                 for key in attributes:
                     if key not in to_process_attr:
-                        logger.debug(f"attribute {key} with value {attributes[key]} not in list of device type {device_type}, ignoring update...")
                         continue
                     try:
                         key_attr = to_snake_case(key)
-                        # This is a hack need a better impl
                         if key_attr == "is_on":
                             turn_on_off = True
-                        # Track name changes for device registry update
                         if key == "customName":
                             old_name = entity._json_data.attributes.custom_name
                             if old_name != attributes[key]:
                                 name_changed = True
                                 new_name = attributes[key]
-                        logger.debug(f"setting {key_attr}  to {attributes[key]}")
-                        logger.debug(f"Entity before setting: {entity._json_data}")
-
+                        
                         value_to_set = attributes[key]
-                        #Need a hack for outlet with date/time entities
                         if key in ["timeOfLastEnergyReset","totalEnergyConsumedLastUpdated"]:
-                            logger.debug(f"Got into date/time so will set the value accordingly...")
                             try :
                                 value_to_set = parser.parse(attributes[key])
                             except:
-                                #Ignore the exception
                                 logger.warning(f"Failed to convert {attributes[key]} to date/time...")
 
                         setattr(entity._json_data.attributes,key_attr, value_to_set)
-                        logger.debug(f"Entity after setting: {entity._json_data}")
                     except Exception as ex:
                         logger.warn(f"Failed to set attribute key: {key} converted to {key_attr} on device: {id}")
-                        logger.warn(ex)
                                 
-                # Update color_mode for lights when color attributes change
                 if device_type == "light" and hasattr(entity, '_color_mode'):
                     if "colorHue" in attributes or "colorSaturation" in attributes:
                         entity._color_mode = ColorMode.HS
                     elif "colorTemperature" in attributes:
                         entity._color_mode = ColorMode.COLOR_TEMP
 
-                # Lights behave odd with hubs when setting attribute one event is generated which
-                # causes brightness or other to toggle so put in a hack to fix that
-                # if its is_on attribute then ignore this routine
                 if device_type == "light" and entity.should_ignore_update and not turn_on_off:
                     entity.reset_ignore_update()
-                    logger.debug("Ignoring calling update_ha_state as ignore_update is set")
                     return
 
-                # Update HA device registry name if customName changed
                 if name_changed and new_name is not None:
                     try:
                         self._hass.loop.call_soon_threadsafe(
@@ -629,20 +593,14 @@ class hub_event_listener(threading.Thread):
                     except Exception as ex:
                         logger.error(f"Failed to schedule device name update for {id}: {ex}")
 
-            # Update HA state if attributes changed OR if reachability/room changed
             if has_attributes or reachability_changed or room_changed:
                 entity.schedule_update_ha_state(False)
 
                 if registry_value.cascade_entity is not None:
-                    # Cascade the update
-                    logger.debug(f"Cascading to cascade entity : {registry_value.cascade_entity.unique_id}")
                     registry_value.cascade_entity.schedule_update_ha_state(False)
 
-
         except Exception as ex:
-            # Temp solution to not log entries
             logger.debug("error processing hub event")
-            logger.debug(f"{ws_msg}")
             logger.debug(ex)
 
     def create_listener(self):
@@ -653,17 +611,14 @@ class hub_event_listener(threading.Thread):
                 header={"Authorization": f"Bearer {self._hub.token}"},
                 on_message=self.on_message)
             self._wsapp.run_forever(sslopt={"cert_reqs": ssl.CERT_NONE})
-            #self._hub.create_event_listener(on_message=self.on_message, on_error=self.on_error)
         except Exception as ex:
             logger.error("Error creating event listener...")
             logger.error(ex)
 
     def stop(self):
         logger.info("Listener request for stop..")
-
         self._request_to_stop = True
         try:
-            #self._hub.stop_event_listener()
             if self._wsapp is not None:
                 self._wsapp.close()
         except:
@@ -674,7 +629,6 @@ class hub_event_listener(threading.Thread):
 
     def run(self):
         while True:
-            # Blocking call
             self.create_listener()
             logger.debug("Listener thread complete...")
             if self._request_to_stop:
