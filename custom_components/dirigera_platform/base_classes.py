@@ -489,6 +489,8 @@ class ikea_alpstuga_co2(ikea_base_device_sensor, SensorEntity):
 CONTROLLER_BUTTON_MAP = {
     "SOMRIG shortcut button" : 2,
     "Remote Control N2" : 4,  # STYRBAR 4-button remote
+    "TRADFRI on/off switch" : 2,
+    "RODRET Dimmer" : 2,
 }
 
 class ikea_controller_device(ikea_base_device, SensorEntity):
