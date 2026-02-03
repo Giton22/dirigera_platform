@@ -208,7 +208,10 @@ class hub_event_listener(threading.Thread):
             click_pattern = details["clickPattern"]
             device_id = details["deviceId"]
             
-            if controller_type != "shortcutController":
+            # Historically we only accepted shortcutController triggers.
+            # For multi-button remotes like STYRBAR, Dirigera can emit button-specific
+            # triggers via sceneUpdated with controllerType=lightController + buttonIndex.
+            if controller_type not in ["shortcutController", "lightController"]:
                 logger.debug(f"controller type on message not compatible: {controller_type}, ignoring...")
                 continue 
             
@@ -223,18 +226,29 @@ class hub_event_listener(threading.Thread):
                 continue
             
             device_id_for_registry = device_id
-             
+
+            # Prefer explicit buttonIndex from Dirigera scene trigger details.
+            # This is required for remotes where websocket remotePressEvent is ambiguous.
             button_idx = 0
-            # FIX: Universal regex to match ANY ID format ending in _N
-            pattern = r'^(.*)_([0-9]+)$'
-            match = re.search(pattern, device_id)
-            if match is not None:
-                device_id_for_registry = f"{match.group(1)}_1"
-                button_idx = int(match.group(2))
-                logger.debug(f"Multi button controller, device_id effective : {device_id_for_registry} with buttons : {button_idx}")
-                
+            if "buttonIndex" in details and details["buttonIndex"] is not None:
+                try:
+                    button_idx = int(details["buttonIndex"])
+                except Exception:
+                    button_idx = 0
+
+            # Fallback: Some multi-button controllers expose separate deviceIds with _N suffix.
+            if button_idx == 0:
+                pattern = r'^(.*)_([0-9]+)$'
+                match = re.search(pattern, device_id)
+                if match is not None:
+                    device_id_for_registry = f"{match.group(1)}_1"
+                    button_idx = int(match.group(2))
+                    logger.debug(
+                        f"Multi button controller, device_id effective : {device_id_for_registry} with buttons : {button_idx}"
+                    )
+
             if button_idx != 0:
-                trigger_type =f"button{button_idx}_{trigger_type}"
+                trigger_type = f"button{button_idx}_{trigger_type}"
             
             # Now look up the associated entity in our own registry
             registry_value = hub_event_listener.get_registry_entry(device_id_for_registry)

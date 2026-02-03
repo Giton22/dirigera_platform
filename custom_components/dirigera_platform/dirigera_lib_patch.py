@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from typing import Any, Optional, Dict
+import re
 
 from dirigera import Hub
 
@@ -79,36 +80,71 @@ class HubX(Hub):
         data = self.get(f"/scenes/{scene_id}")
         return HackScene.make_scene(self, data)
     
-    def create_empty_scene(self, controller_id: str, clicks_supported:list):
-        logging.debug(f"Creating empty scene for controller : {controller_id} with clicks : {clicks_supported}")
-        for click in clicks_supported:
-            scene_name = f'dirigera_integration_empty_scene_{controller_id}_{click}'
-            info = Info(name=f'dirigera_integration_empty_scene_{controller_id}_{click}', icon=Icon.SCENES_CAKE)
-            device_trigger = Trigger(type="controller", disabled=False,
-                                     trigger=TriggerDetails(clickPattern=click, buttonIndex=0, deviceId=controller_id, controllerType=ControllerType.SHORTCUT_CONTROLLER))
+    def create_empty_scene(self, controller_id: str, clicks_supported: list, number_of_buttons: int = 1):
+        """Create empty scenes used only as event generators.
 
-            logger.debug(f"Creating empty scene : {info.name}")
-            #self.create_scene(info=info, scene_type=SceneType.USER_SCENE,triggers=[device_trigger])
+        Why: Dirigera's websocket events are inconsistent across controller models.
+        Some remotes (e.g. STYRBAR) send ambiguous `remotePressEvent` payloads.
+        Creating scenes with per-button triggers makes the hub emit `sceneUpdated`
+        with a `buttonIndex`, which we can map to `buttonX_*` events in HA.
+
+        We always create a legacy shortcutController trigger with buttonIndex=0
+        for backward compatibility.
+
+        For multi-button controllers we additionally create lightController
+        triggers with buttonIndex=1..N, but only for the *primary* controller id
+        (no suffix, or suffix `_1`). This avoids creating redundant scenes for
+        secondary ids like `_2`, `_3`, ... that some controllers expose.
+        """
+
+        try:
+            number_of_buttons = int(number_of_buttons) if number_of_buttons is not None else 1
+        except Exception:
+            number_of_buttons = 1
+
+        logger.debug(
+            f"Creating empty scene(s) for controller: {controller_id} clicks={clicks_supported} buttons={number_of_buttons}"
+        )
+
+        # Determine whether this controller_id is the primary id for multi-button creation.
+        # Pattern matches ids ending in _N (N numeric). Only _1 is treated as primary.
+        allow_multibutton = number_of_buttons > 1
+        m = re.search(r"^(.*)_([0-9]+)$", controller_id)
+        if m is not None and m.group(2) != "1":
+            allow_multibutton = False
+
+        def _post_empty_scene(click_pattern: str, controller_type: str, button_index: int) -> None:
+            scene_name = (
+                f"dirigera_integration_empty_scene_{controller_id}_{controller_type}_{button_index}_{click_pattern}"
+            )
             data = {
-                        "info": {"name" : scene_name, "icon" : "scenes_cake"},
-                        "type": "customScene",
-                        "triggers":[
-                                        {
-                                            "type": "controller", 
-                                            "disabled": False, 
-                                            "trigger": 
-                                                {
-                                                    "controllerType": "shortcutController",
-                                                    "clickPattern": click,
-                                                    "buttonIndex": 0,
-                                                    "deviceId": controller_id
-                                                }
-                                        }
-                                    ],
-                "actions": []
+                "info": {"name": scene_name, "icon": "scenes_cake"},
+                "type": "customScene",
+                "triggers": [
+                    {
+                        "type": "controller",
+                        "disabled": False,
+                        "trigger": {
+                            "controllerType": controller_type,
+                            "clickPattern": click_pattern,
+                            "buttonIndex": button_index,
+                            "deviceId": controller_id,
+                        },
+                    }
+                ],
+                "actions": [],
             }
-            
+            logger.debug(f"Creating empty scene: {scene_name}")
             self.post("/scenes/", data=data)
+
+        for click in clicks_supported:
+            # Legacy generator: works for shortcut controllers and id-suffixed controllers
+            _post_empty_scene(click, "shortcutController", 0)
+
+            # Multi-button generator: required for remotes that only expose per-button via buttonIndex.
+            if allow_multibutton:
+                for btn_idx in range(1, number_of_buttons + 1):
+                    _post_empty_scene(click, "lightController", btn_idx)
         
     def delete_empty_scenes(self):
         scenes = self.get_scenes()

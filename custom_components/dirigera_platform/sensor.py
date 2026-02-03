@@ -185,7 +185,12 @@ async def add_controllers_sensors(hass, async_add_entities, hub, controllers):
             logger.debug(f"Ignoring controller for scene creation : {controller._json_data.id} as no press event supported : {controller._json_data.capabilities.can_send}")
         else:
             logger.debug(f"Will be creating empty scene for {controller._json_data.id}")
-            await hass.async_add_executor_job(hub.create_empty_scene,controller._json_data.id, clicks_supported)
+            await hass.async_add_executor_job(
+                hub.create_empty_scene,
+                controller._json_data.id,
+                clicks_supported,
+                getattr(controller, "number_of_buttons", 1),
+            )
 
         if getattr(controller._json_data.attributes,"battery_percentage",None) is not None:
             controller_entities.append(controller)
